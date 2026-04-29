@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import io
 import re
+from functools import lru_cache
 from datetime import date
 
 import pandas as pd
+import requests
 
 from .models import MARKET_TO_CURRENCY
 
@@ -102,6 +104,53 @@ def _resolve_action(text: object) -> str | None:
     return None
 
 
+def _public_get_text(url: str) -> str:
+    try:
+        response = requests.get(url, timeout=20)
+        response.raise_for_status()
+        return response.text
+    except requests.exceptions.SSLError:
+        response = requests.get(url, timeout=20, verify=False)
+        response.raise_for_status()
+        return response.text
+
+
+@lru_cache(maxsize=1)
+def _load_tw_name_symbol_lookup() -> dict[str, str]:
+    lookup: dict[str, str] = {}
+    for mode in (2, 4, 5):
+        html = _public_get_text(f"https://isin.twse.com.tw/isin/C_public.jsp?strMode={mode}")
+        tables = pd.read_html(io.StringIO(html))
+        if not tables:
+            continue
+        table = tables[0]
+        table.columns = table.iloc[0]
+        table = table.iloc[1:].copy()
+        security_col = next((column for column in table.columns if "有價證券代號及名稱" in str(column)), None)
+        if security_col is None:
+            continue
+        for value in table[security_col].dropna().astype(str):
+            text = value.strip()
+            if "　" in text:
+                symbol, name = text.split("　", 1)
+            elif " " in text:
+                symbol, name = text.split(" ", 1)
+            else:
+                continue
+            clean_symbol = normalize_symbol(symbol)
+            clean_name = name.strip()
+            if clean_symbol and clean_name:
+                lookup.setdefault(clean_name, clean_symbol)
+    return lookup
+
+
+def lookup_tw_symbol_by_name(name: object) -> str:
+    clean_name = str(name or "").strip()
+    if not clean_name:
+        return ""
+    return _load_tw_name_symbol_lookup().get(clean_name, "")
+
+
 def parse_cathay_csv(content: bytes) -> list[dict]:
     text = _decode_csv_bytes(content)
     lines = text.splitlines()
@@ -123,14 +172,14 @@ def parse_cathay_csv(content: bytes) -> list[dict]:
     fee_col = "手續費" if "手續費" in df.columns else None
     tax_col = next((col for col in _CATHAY_TAX_COLS if col in df.columns), None)
 
-    required = [name_col, symbol_col, action_col, shares_col, price_col, date_col]
+    required = [name_col, action_col, shares_col, price_col, date_col]
     if any(column is None for column in required):
         return []
 
     rows: list[dict] = []
     for _, row in df.iterrows():
         action = _resolve_action(row[action_col])
-        symbol = normalize_symbol(row[symbol_col])
+        symbol = normalize_symbol(row[symbol_col]) if symbol_col else lookup_tw_symbol_by_name(row[name_col])
         if not action or not symbol:
             continue
         shares = _parse_optional_number(row[shares_col])

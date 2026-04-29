@@ -12,7 +12,8 @@ LABEL2 = "#ebebf5"
 LABEL3 = "#8e8e93"
 BLUE = "#0a84ff"
 GREEN = "#30d158"
-RED = "#5ac8f5"
+ACCENT = "#0a84ff"
+NEGATIVE = "#64d2ff"
 ORANGE = "#ff9f0a"
 PURPLE = "#bf5af2"
 TEAL = "#5ac8f5"
@@ -30,8 +31,9 @@ APPLE_DARK_CSS = """
     --label2: #ebebf5;
     --label3: #8e8e93;
     --blue: #0a84ff;
+    --accent: #0a84ff;
     --green: #30d158;
-    --red: #5ac8f5;
+    --negative: #64d2ff;
     --orange: #ff9f0a;
     --purple: #bf5af2;
     --teal: #5ac8f5;
@@ -232,6 +234,20 @@ h1, h2, h3, h4, h5, h6, p, label, input, textarea, button,
 [data-testid="stMetricDelta"] {
     font-family: 'JetBrains Mono', 'Menlo', monospace !important;
     font-size: 0.76rem !important;
+    color: var(--accent) !important;
+}
+
+[data-testid="stMetricDelta"] svg,
+[data-testid="stMetricDelta"] > div,
+[data-testid="stMetricDelta"] p,
+[data-testid="stMetricDelta"] span {
+    color: var(--accent) !important;
+    fill: var(--accent) !important;
+}
+
+[data-testid="stMetricDelta"][data-testid*="negative"],
+[data-testid="stMetricDelta"][aria-label*="negative"] {
+    color: var(--negative) !important;
 }
 
 .stTabs [data-baseweb="tab-list"] {

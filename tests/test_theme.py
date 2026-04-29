@@ -8,6 +8,7 @@ from portfolio_app.theme import APPLE_DARK_CSS, BG, SURFACE, apply_dark_figure_s
 def test_apple_dark_css_includes_mobile_safe_area_and_dark_tokens():
     assert "--bg: #000000;" in APPLE_DARK_CSS
     assert "--surface: #1c1c1e;" in APPLE_DARK_CSS
+    assert "--accent: #0a84ff;" in APPLE_DARK_CSS
     assert "safe-area-inset-bottom" in APPLE_DARK_CSS
     assert '[data-testid="stMetric"]' in APPLE_DARK_CSS
 
