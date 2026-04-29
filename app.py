@@ -33,7 +33,6 @@ from portfolio_app.theme import (
     LABEL3,
     ORANGE,
     PURPLE,
-    RED,
     SURFACE,
     SURFACE2,
     TEAL,
@@ -46,9 +45,6 @@ st.set_page_config(
     page_icon="📈",
     layout="wide",
 )
-
-PAGE_OPTIONS = ["總覽", "匯入交易", "交易台帳"]
-
 
 def fmt_money(value: float, currency: str) -> str:
     return f"{value:,.0f} {currency}"
@@ -73,15 +69,9 @@ def render_hero(trades: pd.DataFrame) -> None:
     st.markdown(
         f"""
         <section class="hero-card">
-            <div class="hero-eyebrow">Apple Dark Portfolio Console</div>
-            <h1 class="hero-title">股票績效總覽</h1>
-            <p class="hero-copy">
-                把對帳單、手動交易與照片 OCR 整理成單一台帳，用同一個深色儀表板追蹤台股與美股的已實現、未實現與總損益。
-            </p>
+            <h1 class="hero-title">股票績效</h1>
             <div class="hero-meta">
                 <span class="hero-pill">交易筆數 {len(trades):,}</span>
-                <span class="hero-pill">資料來源 CSV / Manual / OCR</span>
-                <span class="hero-pill">Mobile-first 操作節奏</span>
             </div>
         </section>
         """,
@@ -89,13 +79,13 @@ def render_hero(trades: pd.DataFrame) -> None:
     )
 
 
-def render_section_intro(kicker: str, title: str, copy: str) -> None:
+def render_section_intro(kicker: str, title: str, copy: str = "") -> None:
     st.markdown(
         f"""
         <section class="info-card">
             <div class="section-kicker">{kicker}</div>
             <p class="section-title">{title}</p>
-            <p class="section-copy">{copy}</p>
+            {"<p class='section-copy'>" + copy + "</p>" if copy else ""}
         </section>
         """,
         unsafe_allow_html=True,
@@ -113,26 +103,13 @@ def render_compact_note(text: str) -> None:
     )
 
 
-def render_navigation(trades: pd.DataFrame) -> tuple[str, str, int]:
-    render_section_intro(
-        "Navigation",
-        "手機優先導覽",
-        "用下拉式頁面切換取代固定 tab，讓單手操作時更容易切頁；總覽設定則收進可折疊區塊，避免左側操作列。",
-    )
-    page = st.selectbox(
-        "頁面",
-        PAGE_OPTIONS,
-        index=PAGE_OPTIONS.index(st.session_state.get("mobile_page", "總覽")) if st.session_state.get("mobile_page", "總覽") in PAGE_OPTIONS else 0,
-        key="mobile_page",
-    )
+def render_settings(trades: pd.DataFrame) -> tuple[str, int]:
     with st.expander("顯示設定", expanded=False):
-        st.caption("這些設定只影響總覽顯示，不會修改交易資料。")
         base_currency = st.selectbox("總覽基準幣別", ["TWD", "USD"], index=0, key="base_currency_select")
         refresh_seconds = st.select_slider("自動刷新報價", options=[0, 15, 30, 60], value=30, key="refresh_seconds_select")
-        st.caption("0 秒代表關閉自動刷新。開啟後總覽區會定期重新抓最新股價。")
-    if trades.empty and page != "匯入交易":
-        st.info("目前台帳是空的，建議先從「匯入交易」建立第一批資料。")
-    return page, base_currency, int(refresh_seconds)
+    if trades.empty:
+        st.info("目前台帳是空的，先到「匯入交易」。")
+    return base_currency, int(refresh_seconds)
 
 
 def render_storage_status() -> None:
@@ -202,13 +179,12 @@ def render_overview(trades: pd.DataFrame, base_currency: str) -> None:
     render_section_intro(
         "Overview",
         "績效摘要",
-        "先看損益與持倉，再往下讀圖表與明細。整個摘要區優先為手機閱讀節奏設計。",
     )
     render_summary_metrics(summary, base_currency)
 
     if summary["as_of"]:
         render_compact_note(
-            f"最近報價更新時間：{summary['as_of']}。美股報價可能有延遲，總損益以目前抓到的最新報價換算。"
+            f"報價更新：{summary['as_of']}"
         )
 
     chart_col, allocation_col = st.columns([1.2, 1.0])
@@ -216,7 +192,6 @@ def render_overview(trades: pd.DataFrame, base_currency: str) -> None:
         render_section_intro(
             "Performance",
             "績效圖",
-            "用一張深色時間序列圖拆開總損益、未實現與已實現，方便在手機上快速判讀變化結構。",
         )
         if history.empty:
             st.info("目前還沒有足夠的歷史價格可繪製績效圖。")
@@ -257,7 +232,6 @@ def render_overview(trades: pd.DataFrame, base_currency: str) -> None:
         render_section_intro(
             "Allocation",
             "持倉圖",
-            "用環形圖看目前權重，讓你先抓到部位集中度，再決定要不要往下看持倉排行。",
         )
         if positions.empty:
             st.info("目前沒有持倉。")
@@ -267,7 +241,7 @@ def render_overview(trades: pd.DataFrame, base_currency: str) -> None:
                 names="symbol",
                 values="market_value_base",
                 hole=0.62,
-                color_discrete_sequence=[BLUE, GREEN, ORANGE, PURPLE, RED, TEAL],
+                color_discrete_sequence=[BLUE, "#4c8dff", GREEN, ORANGE, PURPLE, TEAL],
             )
             donut.update_traces(
                 textposition="inside",
@@ -281,7 +255,6 @@ def render_overview(trades: pd.DataFrame, base_currency: str) -> None:
     render_section_intro(
         "Positions",
         "持倉明細",
-        "表格保留完整明細，但資訊順序先服務手機讀取：價值、損益、權重比成本欄位更靠前。",
     )
     if positions.empty:
         st.info("尚無持股明細。")
@@ -318,7 +291,6 @@ def render_overview(trades: pd.DataFrame, base_currency: str) -> None:
     render_section_intro(
         "Ranking",
         "持倉市值排行",
-        "用橫向條圖快速看最大部位，保留台股與美股的視覺分色，方便一眼辨識市場分布。",
     )
     if positions.empty:
         st.info("尚無排行資料。")
@@ -342,12 +314,11 @@ def render_import_tab() -> None:
     render_section_intro(
         "Import",
         "建立或補齊交易台帳",
-        "匯入流程分成三條路徑：CSV、手動輸入、照片 OCR。先把主操作放前面，再把說明收成較輕的輔助資訊。",
     )
     subtab_csv, subtab_manual, subtab_photo = st.tabs(["上傳對帳單", "手動輸入", "照片輸入"])
 
     with subtab_csv:
-        render_compact_note("支援國泰對帳單 CSV 與通用交易 CSV。如果要匯入美股，建議先用模板整理欄位。")
+        render_compact_note("支援國泰對帳單 CSV 與通用交易 CSV。")
         if TEMPLATE_PATH.exists():
             st.download_button(
                 "下載通用交易模板",
@@ -378,7 +349,7 @@ def render_import_tab() -> None:
                 st.error(f"匯入失敗：{exc}")
 
     with subtab_manual:
-        render_compact_note("手動輸入優先為手機操作設計，欄位順序從必要資訊開始，次要欄位放後面。")
+        render_compact_note("手動輸入。")
         with st.form("manual_trade_form", clear_on_submit=True):
             col1, col2 = st.columns(2)
             trade_date = col1.date_input("交易日期", value=date.today())
@@ -430,7 +401,7 @@ def render_import_tab() -> None:
                     st.error(f"新增失敗：{exc}")
 
     with subtab_photo:
-        render_compact_note("照片 OCR 適合清楚截圖與已整理的交易明細。匯入前請再核對股數、價格與買賣方向。")
+        render_compact_note("照片 OCR。")
         image_file = st.file_uploader("上傳照片 / 截圖", type=["png", "jpg", "jpeg"], key="photo_import")
         if image_file is not None and st.button("執行 OCR", key="run_ocr", type="primary", use_container_width=True):
             try:
@@ -457,13 +428,12 @@ def render_ledger_tab(trades: pd.DataFrame) -> None:
     render_section_intro(
         "Ledger",
         "直接修正交易台帳",
-        "這裡保留完整編輯能力，但先用說明卡提醒資料會直接覆寫，避免在手機上誤操作後不知道影響範圍。",
     )
     if trades.empty:
         st.info("台帳目前是空的，先到上方匯入第一批交易。")
         return
 
-    render_compact_note("修改後按下方按鈕覆寫儲存。`trade_id` 與 `created_at` 為系統欄位，維持唯讀。")
+    render_compact_note("`trade_id` 與 `created_at` 為唯讀。")
     editable = trades.copy()
     edited = st.data_editor(
         editable,
@@ -487,16 +457,16 @@ def main() -> None:
     render_shell_start()
     render_hero(trades)
     render_storage_status()
-    selected_page, base_currency, refresh_seconds = render_navigation(trades)
+    base_currency, refresh_seconds = render_settings(trades)
+    overview_tab, import_tab, ledger_tab = st.tabs(["總覽", "匯入交易", "交易台帳"])
 
-    if selected_page == "總覽":
+    with overview_tab:
         if trades.empty:
             render_section_intro(
                 "Welcome",
-                "先建立第一批交易資料",
-                "目前還沒有交易資料。先到「匯入交易」上傳對帳單、手動輸入，或用照片 OCR 建立第一批台帳。",
+                "尚無交易資料",
             )
-            st.info("建立第一筆交易後，這裡就會開始顯示持倉、績效圖與損益摘要。")
+            st.info("先到「匯入交易」。")
         else:
             if refresh_seconds > 0:
                 render_compact_note(f"總覽每 {refresh_seconds} 秒刷新一次。")
@@ -508,9 +478,9 @@ def main() -> None:
                 _live_overview()
             else:
                 render_overview(trades, base_currency)
-    elif selected_page == "匯入交易":
+    with import_tab:
         render_import_tab()
-    else:
+    with ledger_tab:
         render_ledger_tab(trades)
 
     render_shell_end()

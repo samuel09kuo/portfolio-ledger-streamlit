@@ -12,7 +12,7 @@ LABEL2 = "#ebebf5"
 LABEL3 = "#8e8e93"
 BLUE = "#0a84ff"
 GREEN = "#30d158"
-RED = "#ff453a"
+RED = "#5ac8f5"
 ORANGE = "#ff9f0a"
 PURPLE = "#bf5af2"
 TEAL = "#5ac8f5"
@@ -31,32 +31,30 @@ APPLE_DARK_CSS = """
     --label3: #8e8e93;
     --blue: #0a84ff;
     --green: #30d158;
-    --red: #ff453a;
+    --red: #5ac8f5;
     --orange: #ff9f0a;
     --purple: #bf5af2;
     --teal: #5ac8f5;
 }
 
 .stApp {
-    background:
-        radial-gradient(circle at top left, rgba(10, 132, 255, 0.16), transparent 30%),
-        radial-gradient(circle at top right, rgba(48, 209, 88, 0.10), transparent 26%),
-        linear-gradient(180deg, #050505 0%, #000000 42%, #050505 100%) !important;
+    background: #000000 !important;
 }
 
 [data-testid="stAppViewContainer"] {
     min-height: 100dvh !important;
     color: var(--label) !important;
-    scroll-padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 6rem) !important;
+    scroll-padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8rem) !important;
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 7rem) !important;
 }
 
 @supports (padding: max(0px)) {
     .stApp {
-        padding-bottom: max(16px, env(safe-area-inset-bottom)) !important;
+        padding-bottom: max(24px, env(safe-area-inset-bottom)) !important;
     }
 
     .block-container {
-        padding-bottom: calc(max(1.2rem, env(safe-area-inset-bottom)) + 4.8rem) !important;
+        padding-bottom: calc(max(1.5rem, env(safe-area-inset-bottom)) + 6.5rem) !important;
     }
 }
 
@@ -112,25 +110,11 @@ h1, h2, h3, h4, h5, h6, p, label, input, textarea, button,
 }
 
 .hero-card {
-    position: relative;
-    overflow: hidden;
-    border-radius: 22px;
-    background:
-        linear-gradient(135deg, rgba(10, 132, 255, 0.18), rgba(191, 90, 242, 0.12)),
-        rgba(28, 28, 30, 0.94);
+    border-radius: 18px;
+    background: rgba(28, 28, 30, 0.94);
     border: 1px solid rgba(58, 58, 60, 0.95);
-    padding: 1.05rem 1rem 1rem 1rem;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
-}
-
-.hero-card::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background:
-        radial-gradient(circle at 85% 12%, rgba(90, 200, 245, 0.22), transparent 20%),
-        radial-gradient(circle at 0% 100%, rgba(48, 209, 88, 0.14), transparent 24%);
-    pointer-events: none;
+    padding: 0.9rem 1rem;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
 }
 
 .hero-eyebrow {
@@ -146,25 +130,17 @@ h1, h2, h3, h4, h5, h6, p, label, input, textarea, button,
 
 .hero-title {
     margin: 0;
-    font-size: 1.55rem;
-    font-weight: 700;
-    letter-spacing: -0.03em;
+    font-size: 1.2rem;
+    font-weight: 650;
+    letter-spacing: -0.02em;
     color: var(--label);
-}
-
-.hero-copy {
-    margin: 0.5rem 0 0 0;
-    max-width: 50rem;
-    font-size: 0.93rem;
-    line-height: 1.72;
-    color: var(--label2);
 }
 
 .hero-meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.55rem;
-    margin-top: 0.85rem;
+    gap: 0.5rem;
+    margin-top: 0.55rem;
 }
 
 .hero-pill {
@@ -366,20 +342,16 @@ div[data-testid="stDataEditor"] div[role="grid"] {
     .block-container {
         padding-left: 0.75rem !important;
         padding-right: 0.75rem !important;
-        padding-bottom: calc(max(1rem, env(safe-area-inset-bottom)) + 5rem) !important;
+        padding-bottom: calc(max(1.25rem, env(safe-area-inset-bottom)) + 7rem) !important;
     }
 
     .hero-card {
         border-radius: 18px;
-        padding: 0.95rem 0.85rem;
+        padding: 0.85rem 0.85rem;
     }
 
     .hero-title {
-        font-size: 1.32rem;
-    }
-
-    .hero-copy {
-        font-size: 0.88rem;
+        font-size: 1.08rem;
     }
 
     [data-testid="stMetricValue"] {
