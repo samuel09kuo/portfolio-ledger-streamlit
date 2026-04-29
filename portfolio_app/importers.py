@@ -6,9 +6,8 @@ from functools import lru_cache
 from datetime import date
 
 import pandas as pd
-import requests
 
-from .models import MARKET_TO_CURRENCY
+from .models import MARKET_TO_CURRENCY, TW_NAME_SYMBOLS_PATH
 
 _CATHAY_FEE_RATE = 0.001425 * 0.28
 _CATHAY_TAX_COLS = ["交易稅", "證交稅", "稅額", "稅費"]
@@ -104,43 +103,17 @@ def _resolve_action(text: object) -> str | None:
     return None
 
 
-def _public_get_text(url: str) -> str:
-    try:
-        response = requests.get(url, timeout=20)
-        response.raise_for_status()
-        return response.text
-    except requests.exceptions.SSLError:
-        response = requests.get(url, timeout=20, verify=False)
-        response.raise_for_status()
-        return response.text
-
-
 @lru_cache(maxsize=1)
 def _load_tw_name_symbol_lookup() -> dict[str, str]:
+    if not TW_NAME_SYMBOLS_PATH.exists():
+        return {}
+    frame = pd.read_csv(TW_NAME_SYMBOLS_PATH, dtype=str).fillna("")
     lookup: dict[str, str] = {}
-    for mode in (2, 4, 5):
-        html = _public_get_text(f"https://isin.twse.com.tw/isin/C_public.jsp?strMode={mode}")
-        tables = pd.read_html(io.StringIO(html), flavor="lxml")
-        if not tables:
-            continue
-        table = tables[0]
-        table.columns = table.iloc[0]
-        table = table.iloc[1:].copy()
-        security_col = next((column for column in table.columns if "有價證券代號及名稱" in str(column)), None)
-        if security_col is None:
-            continue
-        for value in table[security_col].dropna().astype(str):
-            text = value.strip()
-            if "　" in text:
-                symbol, name = text.split("　", 1)
-            elif " " in text:
-                symbol, name = text.split(" ", 1)
-            else:
-                continue
-            clean_symbol = normalize_symbol(symbol)
-            clean_name = name.strip()
-            if clean_symbol and clean_name:
-                lookup.setdefault(clean_name, clean_symbol)
+    for row in frame.itertuples(index=False):
+        name = str(row.name).strip()
+        symbol = normalize_symbol(row.symbol)
+        if name and symbol:
+            lookup.setdefault(name, symbol)
     return lookup
 
 

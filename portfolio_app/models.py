@@ -7,6 +7,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 TEMPLATE_DIR = PROJECT_ROOT / "templates"
 LEDGER_PATH = DATA_DIR / "ledger.csv"
 TEMPLATE_PATH = TEMPLATE_DIR / "trades_template.csv"
+TW_NAME_SYMBOLS_PATH = PROJECT_ROOT / "portfolio_app" / "tw_name_symbols.csv"
 
 LEDGER_COLUMNS = [
     "trade_id",

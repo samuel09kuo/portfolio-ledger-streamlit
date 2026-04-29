@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from portfolio_app.importers import parse_cathay_csv
+from portfolio_app.importers import lookup_tw_symbol_by_name, parse_cathay_csv
 
 
 def test_parse_cathay_csv_supports_cp950_encoded_statement():
@@ -36,3 +36,7 @@ def test_parse_cathay_csv_resolves_symbol_from_name_when_statement_has_no_code(m
     assert len(rows) == 1
     assert rows[0]["symbol"] == "2330"
     assert rows[0]["name"] == "台積電"
+
+
+def test_lookup_tw_symbol_by_name_uses_bundled_lookup_file():
+    assert lookup_tw_symbol_by_name("台積電") == "2330"
