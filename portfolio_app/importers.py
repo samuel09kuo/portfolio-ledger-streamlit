@@ -14,6 +14,15 @@ _BUY_WORDS = ("現買", "零股買", "買進", "融資買進", "BUY", "B")
 _SELL_WORDS = ("現賣", "零股賣", "賣出", "融資賣出", "SELL", "S")
 
 
+def _decode_csv_bytes(content: bytes) -> str:
+    for encoding in ("utf-8-sig", "cp950", "big5", "utf-8"):
+        try:
+            return content.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return content.decode("utf-8-sig", errors="ignore")
+
+
 def normalize_symbol(symbol: object) -> str:
     text = str(symbol or "").strip().upper()
     text = text.replace(".TW", "").replace(".TWO", "")
@@ -94,7 +103,7 @@ def _resolve_action(text: object) -> str | None:
 
 
 def parse_cathay_csv(content: bytes) -> list[dict]:
-    text = content.decode("utf-8-sig", errors="ignore")
+    text = _decode_csv_bytes(content)
     lines = text.splitlines()
     header_idx = next((i for i, line in enumerate(lines) if "股名" in line or "股票名稱" in line), None)
     if header_idx is None:
