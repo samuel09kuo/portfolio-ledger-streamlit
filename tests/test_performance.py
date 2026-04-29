@@ -75,6 +75,7 @@ def test_build_current_snapshot_handles_tw_and_us_positions():
     assert summary["holding_count"] == 2
     assert positions.iloc[0]["market_value_base"] > 0
     assert summary["market_value"] > summary["open_cost"]
+    assert positions["market_value_base"].sum() < positions["gross_market_value_base"].sum()
 
 
 def test_build_portfolio_history_tracks_realized_and_unrealized():

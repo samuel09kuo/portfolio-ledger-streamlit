@@ -102,7 +102,22 @@ def _empty_state() -> dict[str, float]:
         "realized_base": 0.0,
         "fees_local": 0.0,
         "tax_local": 0.0,
+        "trade_notional_local": 0.0,
     }
+
+
+def _estimated_exit_fee_rate(state: dict[str, float]) -> float:
+    notional = state.get("trade_notional_local", 0.0)
+    fees = state.get("fees_local", 0.0)
+    if notional > 0 and fees > 0:
+        return fees / notional
+    return 0.001425 * 0.28
+
+
+def _estimated_exit_tax_rate(symbol: str, market: str) -> float:
+    if market != "TW":
+        return 0.0
+    return 0.001 if symbol.startswith("00") else 0.003
 
 
 def build_current_snapshot(
@@ -149,6 +164,7 @@ def build_current_snapshot(
             state["cost_base"] += total_local * rate
             state["fees_local"] += row.fee
             state["tax_local"] += row.tax
+            state["trade_notional_local"] += row.price * row.shares
         elif row.action == "SELL":
             if state["quantity"] <= 0 or row.shares > state["quantity"]:
                 raise ValueError(f"{row.trade_date} {row.symbol} 賣出股數超過持倉，請先修正台帳。")
@@ -161,6 +177,7 @@ def build_current_snapshot(
             state["quantity"] -= row.shares
             state["fees_local"] += row.fee
             state["tax_local"] += row.tax
+            state["trade_notional_local"] += row.price * row.shares
         elif row.action == "SPLIT":
             if state["quantity"] > 0 and row.shares > 0:
                 state["quantity"] *= row.shares
@@ -183,7 +200,11 @@ def build_current_snapshot(
 
         fx_series = fx_history.get(meta["currency"], pd.Series(dtype=float))
         latest_rate = float(fx_series.dropna().iloc[-1]) if not fx_series.empty else 1.0
-        market_value = state["quantity"] * last_price * latest_rate
+        gross_market_value = state["quantity"] * last_price * latest_rate
+        exit_fee_local = float(max(1, int((state["quantity"] * last_price) * _estimated_exit_fee_rate(state)))) if last_price > 0 else 0.0
+        exit_tax_local = float(int((state["quantity"] * last_price) * _estimated_exit_tax_rate(meta["symbol"], meta["market"]))) if last_price > 0 else 0.0
+        exit_cost_base = (exit_fee_local + exit_tax_local) * latest_rate
+        market_value = gross_market_value - exit_cost_base
         unrealized = market_value - state["cost_base"]
         price_change_pct = None
         if previous_close > 0 and last_price > 0:
@@ -199,15 +220,19 @@ def build_current_snapshot(
                 "market": meta["market"],
                 "name": meta["name"],
                 "currency": meta["currency"],
+                "display_name": f"{meta['name']}（{meta['symbol']}）" if meta["name"] else meta["symbol"],
                 "quantity": state["quantity"],
                 "avg_cost_local": (state["cost_local"] / state["quantity"]) if state["quantity"] else 0.0,
                 "open_cost_base": state["cost_base"],
                 "last_price": last_price,
+                "gross_market_value_base": gross_market_value,
                 "market_value_base": market_value,
                 "unrealized_pnl_base": unrealized,
                 "realized_pnl_base": state["realized_base"],
                 "fees_local": state["fees_local"],
                 "tax_local": state["tax_local"],
+                "estimated_exit_fee_local": exit_fee_local,
+                "estimated_exit_tax_local": exit_tax_local,
                 "price_change_pct": price_change_pct,
                 "as_of": quote.get("as_of", ""),
             }

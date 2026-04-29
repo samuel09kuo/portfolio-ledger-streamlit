@@ -47,6 +47,7 @@ st.set_page_config(
     layout="wide",
 )
 
+
 def fmt_money(value: float, currency: str) -> str:
     return f"{value:,.0f} {currency}"
 
@@ -55,6 +56,21 @@ def fmt_pct(value: float | None) -> str:
     if value is None or pd.isna(value):
         return "—"
     return f"{value * 100:+.2f}%"
+
+
+def fmt_security(name: object, symbol: object) -> str:
+    clean_name = str(name or "").strip()
+    clean_symbol = str(symbol or "").strip().upper()
+    return f"{clean_name}（{clean_symbol}）" if clean_name and clean_symbol else clean_name or clean_symbol
+
+
+def chart_config() -> dict:
+    return {
+        "displayModeBar": False,
+        "scrollZoom": False,
+        "doubleClick": False,
+        "staticPlot": True,
+    }
 
 
 def render_shell_start() -> None:
@@ -84,7 +100,7 @@ def render_section_intro(kicker: str, title: str, copy: str = "") -> None:
     st.markdown(
         f"""
         <section class="info-card">
-            <div class="section-kicker">{kicker}</div>
+            {"<div class='section-kicker'>" + kicker + "</div>" if kicker else ""}
             <p class="section-title">{title}</p>
             {"<p class='section-copy'>" + copy + "</p>" if copy else ""}
         </section>
@@ -144,7 +160,7 @@ def load_market_context(
 
 def render_summary_metrics(summary: dict[str, float | str | int], base_currency: str) -> None:
     row1_col1, row1_col2 = st.columns(2)
-    row1_col1.metric("目前市值", fmt_money(float(summary["market_value"]), base_currency))
+    row1_col1.metric("目前淨值", fmt_money(float(summary["market_value"]), base_currency))
     row1_col2.metric(
         "未實現損益",
         fmt_money(float(summary["unrealized_pnl"]), base_currency),
@@ -178,7 +194,7 @@ def render_overview(trades: pd.DataFrame, base_currency: str) -> None:
     history = build_portfolio_history(trades, price_history, fx_history, base_currency)
 
     render_section_intro(
-        "Overview",
+        "總覽",
         "績效摘要",
     )
     render_summary_metrics(summary, base_currency)
@@ -191,7 +207,7 @@ def render_overview(trades: pd.DataFrame, base_currency: str) -> None:
     chart_col, allocation_col = st.columns([1.2, 1.0])
     with chart_col:
         render_section_intro(
-            "Performance",
+            "走勢",
             "績效圖",
         )
         if history.empty:
@@ -227,40 +243,42 @@ def render_overview(trades: pd.DataFrame, base_currency: str) -> None:
             )
             fig.add_hline(y=0, line_dash="dot", line_color=LABEL3)
             apply_dark_figure_style(fig, height=400)
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig, use_container_width=True, config=chart_config())
 
     with allocation_col:
         render_section_intro(
-            "Allocation",
-            "持倉圖",
+            "配置",
+            "持倉分布",
         )
         if positions.empty:
             st.info("目前沒有持倉。")
         else:
-            donut = px.pie(
+            treemap = px.treemap(
                 positions,
-                names="symbol",
+                path=[px.Constant("持倉"), "display_name"],
                 values="market_value_base",
-                hole=0.62,
-                color_discrete_sequence=[BLUE, "#4c8dff", GREEN, ORANGE, PURPLE, TEAL],
+                color="market_value_base",
+                color_continuous_scale=["#163a66", "#0a84ff", "#64d2ff"],
             )
-            donut.update_traces(
-                textposition="inside",
-                textfont_color="white",
+            treemap.update_traces(
+                root_color=SURFACE2,
+                textinfo="label+percent parent",
                 marker=dict(line=dict(color=SURFACE2, width=1)),
+                hovertemplate="%{label}<br>占比 %{percentParent:.1%}<br>淨值 %{value:,.0f}<extra></extra>",
             )
-            apply_dark_figure_style(donut, height=400)
-            donut.update_layout(showlegend=True)
-            st.plotly_chart(donut, use_container_width=True, config={"displayModeBar": False})
+            apply_dark_figure_style(treemap, height=400)
+            treemap.update_layout(coloraxis_showscale=False, margin=dict(l=8, r=8, t=18, b=8))
+            st.plotly_chart(treemap, use_container_width=True, config=chart_config())
 
     render_section_intro(
-        "Positions",
+        "持倉",
         "持倉明細",
     )
     if positions.empty:
         st.info("尚無持股明細。")
     else:
         display = positions.copy()
+        display["標的"] = display.apply(lambda row: fmt_security(row["name"], row["symbol"]), axis=1)
         display["quantity"] = display["quantity"].map(lambda value: f"{value:,.4f}".rstrip("0").rstrip("."))
         display["avg_cost_local"] = display["avg_cost_local"].map(lambda value: f"{value:,.2f}")
         display["last_price"] = display["last_price"].map(lambda value: f"{value:,.2f}")
@@ -272,9 +290,7 @@ def render_overview(trades: pd.DataFrame, base_currency: str) -> None:
         st.dataframe(
             display[
                 [
-                    "symbol",
-                    "market",
-                    "name",
+                    "標的",
                     "market_value_base",
                     "unrealized_pnl_base",
                     "realized_pnl_base",
@@ -284,13 +300,24 @@ def render_overview(trades: pd.DataFrame, base_currency: str) -> None:
                     "last_price",
                     "price_change_pct",
                 ]
-            ],
+            ].rename(
+                columns={
+                    "market_value_base": "目前淨值",
+                    "unrealized_pnl_base": "未實現損益",
+                    "realized_pnl_base": "已實現損益",
+                    "weight_pct": "權重",
+                    "quantity": "股數",
+                    "avg_cost_local": "均價",
+                    "last_price": "現價",
+                    "price_change_pct": "漲跌幅",
+                }
+            ),
             use_container_width=True,
             hide_index=True,
         )
 
     render_section_intro(
-        "Ranking",
+        "排行",
         "持倉市值排行",
     )
     if positions.empty:
@@ -300,7 +327,7 @@ def render_overview(trades: pd.DataFrame, base_currency: str) -> None:
         fig = px.bar(
             bars,
             x="market_value_base",
-            y="symbol",
+            y="display_name",
             orientation="h",
             text="market_value_base",
             color="market",
@@ -308,12 +335,12 @@ def render_overview(trades: pd.DataFrame, base_currency: str) -> None:
         )
         fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
         apply_dark_figure_style(fig, height=430)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig, use_container_width=True, config=chart_config())
 
 
 def render_import_tab() -> None:
     render_section_intro(
-        "Import",
+        "匯入",
         "建立或補齊交易台帳",
     )
     subtab_csv, subtab_manual, subtab_photo = st.tabs(["上傳對帳單", "手動輸入", "照片輸入"])
@@ -345,7 +372,24 @@ def render_import_tab() -> None:
                 if preview.empty:
                     st.warning("這份檔案沒有解析到交易紀錄。")
                 else:
-                    st.dataframe(preview, use_container_width=True, hide_index=True)
+                    preview["標的"] = preview.apply(lambda row: fmt_security(row.get("name"), row.get("symbol")), axis=1)
+                    preview["動作"] = preview["action"].map({"BUY": "買進", "SELL": "賣出", "SPLIT": "分割"}).fillna(preview["action"])
+                    st.dataframe(
+                        preview[
+                            ["trade_date", "標的", "動作", "shares", "price", "fee", "tax", "order_id"]
+                        ].rename(
+                            columns={
+                                "trade_date": "交易日期",
+                                "shares": "股數",
+                                "price": "成交價",
+                                "fee": "手續費",
+                                "tax": "交易稅",
+                                "order_id": "委託單號",
+                            }
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
                     if st.button("匯入這批交易", key="import_csv_button", type="primary", use_container_width=True):
                         source = "cathay_csv" if import_type == "國泰對帳單 CSV" else "generic_csv"
                         added = append_records(records, source=source)
@@ -356,13 +400,15 @@ def render_import_tab() -> None:
     with subtab_manual:
         render_compact_note("手動輸入。")
         with st.form("manual_trade_form", clear_on_submit=True):
+            action_options = {"買進": "BUY", "賣出": "SELL", "分割": "SPLIT"}
             col1, col2 = st.columns(2)
             trade_date = col1.date_input("交易日期", value=date.today())
             market = col2.selectbox("市場", ["TW", "US"])
 
             col3, col4 = st.columns(2)
             symbol = col3.text_input("股票代號", placeholder="2330 或 AAPL")
-            action = col4.selectbox("動作", ["BUY", "SELL", "SPLIT"])
+            action_label = col4.selectbox("動作", list(action_options))
+            action = action_options[action_label]
 
             col5, col6 = st.columns(2)
             shares = col5.number_input("股數 / 分割倍率", min_value=0.0, value=0.0, step=1.0)
@@ -377,8 +423,8 @@ def render_import_tab() -> None:
             order_id = col10.text_input("委託單號", placeholder="可空白")
 
             col11, col12 = st.columns(2)
-            broker = col11.text_input("券商", placeholder="Cathay / IBKR...")
-            account = col12.text_input("帳戶", placeholder="Main / US ...")
+            broker = col11.text_input("券商", placeholder="國泰 / 盈透...")
+            account = col12.text_input("帳戶", placeholder="主帳 / 美股 ...")
 
             note = st.text_area("備註", placeholder="例如：盤前加碼、手動補登")
             submitted = st.form_submit_button("新增交易", type="primary", use_container_width=True)
@@ -431,7 +477,7 @@ def render_import_tab() -> None:
 
 def render_ledger_tab(trades: pd.DataFrame) -> None:
     render_section_intro(
-        "Ledger",
+        "台帳",
         "直接修正交易台帳",
     )
     if trades.empty:
@@ -468,13 +514,13 @@ def main() -> None:
     with overview_tab:
         if trades.empty:
             render_section_intro(
-                "Welcome",
+                "開始",
                 "尚無交易資料",
             )
             st.info("先到「匯入交易」。")
         else:
             if refresh_seconds > 0:
-                render_compact_note(f"總覽每 {refresh_seconds} 秒刷新一次。")
+                render_compact_note(f"總覽每 {refresh_seconds} 秒更新一次。")
 
                 @st.fragment(run_every=refresh_seconds)
                 def _live_overview() -> None:
