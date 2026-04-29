@@ -6,15 +6,59 @@ import pandas as pd
 
 from .market_data import symbol_key
 
+_KNOWN_CORPORATE_ACTIONS = [
+    {
+        "trade_id": "split-00631l-20260331",
+        "trade_date": "2026-03-31",
+        "symbol": "00631L",
+        "market": "TW",
+        "name": "元大台灣50正2",
+        "action": "SPLIT",
+        "shares": 22.0,
+        "price": 0.0,
+        "fee": 0.0,
+        "tax": 0.0,
+        "currency": "TWD",
+        "order_id": "SPLIT_631L_20260331",
+        "broker": "",
+        "account": "",
+        "source": "system",
+        "note": "00631L 1:22 股票分割",
+        "created_at": "2026-03-31T00:00:00",
+    }
+]
+
+
+def _prepare_trades(trades: pd.DataFrame) -> pd.DataFrame:
+    frame = trades.copy()
+    for column, default in [("created_at", ""), ("trade_id", "")]:
+        if column not in frame.columns:
+            frame[column] = default
+
+    additions: list[dict] = []
+    for action in _KNOWN_CORPORATE_ACTIONS:
+        has_symbol = (
+            (frame.get("symbol", pd.Series(dtype=str)).astype(str) == action["symbol"])
+            & (frame.get("market", pd.Series(dtype=str)).astype(str) == action["market"])
+        ).any()
+        if not has_symbol:
+            continue
+
+        has_same_order = (frame.get("order_id", pd.Series(dtype=str)).astype(str) == action["order_id"]).any()
+        if has_same_order:
+            continue
+        additions.append(action)
+
+    if additions:
+        frame = pd.concat([frame, pd.DataFrame(additions)], ignore_index=True, sort=False)
+    return frame.sort_values(["trade_date", "created_at", "trade_id"]).reset_index(drop=True)
+
 
 def validate_trades(trades: pd.DataFrame) -> list[str]:
     problems: list[str] = []
     if trades.empty:
         return problems
-    frame = trades.copy()
-    for column, default in [("created_at", ""), ("trade_id", "")]:
-        if column not in frame.columns:
-            frame[column] = default
+    frame = _prepare_trades(trades)
 
     for row in frame.itertuples(index=False):
         if row.action not in {"BUY", "SELL", "SPLIT"}:
@@ -80,6 +124,7 @@ def build_current_snapshot(
             "base_currency": base_currency,
         }
         return empty_summary, pd.DataFrame()
+    trades = _prepare_trades(trades)
 
     states: dict[str, dict[str, float]] = defaultdict(_empty_state)
     symbol_meta: dict[str, dict[str, str]] = {}
@@ -197,6 +242,7 @@ def build_portfolio_history(
 ) -> pd.DataFrame:
     if trades.empty:
         return pd.DataFrame(columns=["date", "market_value", "open_cost", "realized_pnl", "unrealized_pnl", "total_pnl"])
+    trades = _prepare_trades(trades)
 
     all_dates = set()
     for series in price_history.values():

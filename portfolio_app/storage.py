@@ -151,7 +151,10 @@ def append_records(records: list[dict], source: str) -> int:
     merged = pd.concat([ledger, added], ignore_index=True)
     problems = validate_trades(merged)
     if problems:
-        raise ValueError(problems[0])
+        preview = "；".join(problems[:5])
+        if len(problems) > 5:
+            preview += f"；另外還有 {len(problems) - 5} 筆"
+        raise ValueError(preview)
     save_ledger(merged)
     return len(added)
 
