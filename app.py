@@ -320,12 +320,11 @@ def render_import_tab() -> None:
     with subtab_csv:
         render_compact_note("支援國泰對帳單 CSV 與通用交易 CSV。")
         if TEMPLATE_PATH.exists():
-            st.download_button(
+            st.link_button(
                 "下載通用交易模板",
-                TEMPLATE_PATH.read_bytes(),
-                file_name="trades_template.csv",
-                mime="text/csv",
+                "https://raw.githubusercontent.com/samuel09kuo/portfolio-ledger-streamlit/main/templates/trades_template.csv",
                 type="primary",
+                use_container_width=True,
             )
         import_type = st.radio("匯入格式", ["國泰對帳單 CSV", "通用交易 CSV"], horizontal=True)
         uploaded = st.file_uploader("選擇檔案", type=["csv"], key="csv_import")
