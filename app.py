@@ -26,6 +26,7 @@ from portfolio_app.performance import (
     validate_trades,
 )
 from portfolio_app.storage import append_records, load_ledger, save_ledger
+from portfolio_app.storage import get_storage_backend_status
 from portfolio_app.theme import (
     BLUE,
     GREEN,
@@ -132,6 +133,18 @@ def render_navigation(trades: pd.DataFrame) -> tuple[str, str, int]:
     if trades.empty and page != "匯入交易":
         st.info("目前台帳是空的，建議先從「匯入交易」建立第一批資料。")
     return page, base_currency, int(refresh_seconds)
+
+
+def render_storage_status() -> None:
+    status = get_storage_backend_status()
+    summary = status.get("summary", "")
+    detail = status.get("detail", "")
+    if status.get("level") == "success":
+        st.success(f"{summary}\n\n{detail}")
+    elif status.get("level") == "warning":
+        st.warning(f"{summary}\n\n{detail}")
+    else:
+        st.info(f"{summary}\n\n{detail}")
 
 
 def load_market_context(
@@ -473,6 +486,7 @@ def main() -> None:
     trades = load_ledger()
     render_shell_start()
     render_hero(trades)
+    render_storage_status()
     selected_page, base_currency, refresh_seconds = render_navigation(trades)
 
     if selected_page == "總覽":
