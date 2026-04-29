@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from portfolio_app.performance import build_current_snapshot, build_portfolio_history
+from portfolio_app.performance import build_current_snapshot, build_portfolio_history, validate_trades
 
 
 def test_build_current_snapshot_handles_tw_and_us_positions():
@@ -133,3 +133,27 @@ def test_build_portfolio_history_tracks_realized_and_unrealized():
     assert not history.empty
     assert history.iloc[-1]["realized_pnl"] == 800.0
     assert history.iloc[-1]["unrealized_pnl"] == 1500.0
+
+
+def test_validate_trades_flags_sell_that_exceeds_holdings():
+    trades = pd.DataFrame(
+        [
+            {
+                "trade_date": "2026-04-08",
+                "symbol": "00631L",
+                "market": "TW",
+                "name": "元大台灣50正2",
+                "action": "SELL",
+                "shares": 1000.0,
+                "price": 30.0,
+                "fee": 10.0,
+                "tax": 0.0,
+                "currency": "TWD",
+                "created_at": "2026-04-08T09:00:00",
+            }
+        ]
+    )
+
+    problems = validate_trades(trades)
+
+    assert any("賣出股數超過持倉" in problem for problem in problems)

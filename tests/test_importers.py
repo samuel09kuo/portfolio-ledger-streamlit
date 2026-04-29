@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from portfolio_app.importers import lookup_tw_symbol_by_name, parse_cathay_csv
+from portfolio_app.importers import (
+    detect_cathay_statement_notice,
+    lookup_tw_symbol_by_name,
+    parse_cathay_csv,
+)
 
 
 def test_parse_cathay_csv_supports_cp950_encoded_statement():
@@ -40,3 +44,14 @@ def test_parse_cathay_csv_resolves_symbol_from_name_when_statement_has_no_code(m
 
 def test_lookup_tw_symbol_by_name_uses_bundled_lookup_file():
     assert lookup_tw_symbol_by_name("台積電") == "2330"
+
+
+def test_detect_cathay_statement_notice_returns_partial_export_banner():
+    text = (
+        "根據您篩選的結果，總計有81筆資料，當前資料為1-50筆，看更多請至國泰證券app查詢\n"
+        "股名,日期,成交股數\n"
+    )
+
+    notice = detect_cathay_statement_notice(text.encode("utf-8-sig"))
+
+    assert notice == "根據您篩選的結果，總計有81筆資料，當前資料為1-50筆，看更多請至國泰證券app查詢"

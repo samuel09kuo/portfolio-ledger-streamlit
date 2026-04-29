@@ -24,6 +24,15 @@ def _decode_csv_bytes(content: bytes) -> str:
     return content.decode("utf-8-sig", errors="ignore")
 
 
+def detect_cathay_statement_notice(content: bytes) -> str:
+    text = _decode_csv_bytes(content)
+    for line in text.splitlines():
+        clean = line.strip()
+        if clean and "總計有" in clean and "當前資料為" in clean:
+            return clean
+    return ""
+
+
 def normalize_symbol(symbol: object) -> str:
     text = str(symbol or "").strip().upper()
     text = text.replace(".TW", "").replace(".TWO", "")

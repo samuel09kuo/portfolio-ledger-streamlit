@@ -11,13 +11,32 @@ def validate_trades(trades: pd.DataFrame) -> list[str]:
     problems: list[str] = []
     if trades.empty:
         return problems
-    for row in trades.itertuples(index=False):
+    frame = trades.copy()
+    for column, default in [("created_at", ""), ("trade_id", "")]:
+        if column not in frame.columns:
+            frame[column] = default
+
+    for row in frame.itertuples(index=False):
         if row.action not in {"BUY", "SELL", "SPLIT"}:
             problems.append(f"{row.trade_date} {row.symbol}: 不支援 action={row.action}")
         if row.action in {"BUY", "SELL"} and (row.shares <= 0 or row.price <= 0):
             problems.append(f"{row.trade_date} {row.symbol}: 股數與價格需大於 0")
         if row.market not in {"TW", "US"}:
             problems.append(f"{row.trade_date} {row.symbol}: 不支援 market={row.market}")
+
+    quantities: dict[str, float] = defaultdict(float)
+    ordered = frame.sort_values(["trade_date", "created_at", "trade_id"])
+    for row in ordered.itertuples(index=False):
+        key = symbol_key(row.market, row.symbol)
+        if row.action == "BUY":
+            quantities[key] += row.shares
+        elif row.action == "SELL":
+            if quantities[key] <= 0 or row.shares > quantities[key]:
+                problems.append(f"{row.trade_date} {row.symbol}: 賣出股數超過持倉，這通常代表匯入的對帳單不是完整歷史。")
+            else:
+                quantities[key] -= row.shares
+        elif row.action == "SPLIT" and quantities[key] > 0 and row.shares > 0:
+            quantities[key] *= row.shares
     return problems
 
 

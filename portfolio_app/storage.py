@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import pandas as pd
 
 from .models import DATA_DIR, LEDGER_COLUMNS, LEDGER_PATH
+from .performance import validate_trades
 
 SUPABASE_LEDGER_TABLE = "portfolio_ledger"
 
@@ -147,7 +148,11 @@ def append_records(records: list[dict], source: str) -> int:
     added = incoming.loc[append_mask].copy()
     if added.empty:
         return 0
-    save_ledger(pd.concat([ledger, added], ignore_index=True))
+    merged = pd.concat([ledger, added], ignore_index=True)
+    problems = validate_trades(merged)
+    if problems:
+        raise ValueError(problems[0])
+    save_ledger(merged)
     return len(added)
 
 

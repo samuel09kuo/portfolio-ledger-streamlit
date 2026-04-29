@@ -9,6 +9,7 @@ import streamlit as st
 
 from portfolio_app.importers import (
     build_manual_trade,
+    detect_cathay_statement_notice,
     parse_cathay_csv,
     parse_generic_csv,
 )
@@ -330,10 +331,15 @@ def render_import_tab() -> None:
         uploaded = st.file_uploader("選擇檔案", type=["csv"], key="csv_import")
         if uploaded is not None:
             try:
+                uploaded_bytes = uploaded.getvalue()
+                if import_type == "國泰對帳單 CSV":
+                    notice = detect_cathay_statement_notice(uploaded_bytes)
+                    if notice:
+                        st.warning(f"{notice}\n\n這種檔案通常只包含部分歷史，若有先賣後買，請把更早的交易也一併匯入。")
                 records = (
-                    parse_cathay_csv(uploaded.getvalue())
+                    parse_cathay_csv(uploaded_bytes)
                     if import_type == "國泰對帳單 CSV"
-                    else parse_generic_csv(uploaded.getvalue())
+                    else parse_generic_csv(uploaded_bytes)
                 )
                 preview = pd.DataFrame(records)
                 if preview.empty:
