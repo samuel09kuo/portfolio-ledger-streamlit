@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+
+.streamlit/secrets.toml
+streamlit_*.out.log
+streamlit_*.err.log
+
+data/*.csv
+!data/.gitkeep

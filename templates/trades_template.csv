@@ -1,0 +1,3 @@
+trade_date,symbol,market,name,action,shares,price,fee,tax,currency,order_id,broker,account,source,note
+2026-04-29,2330,TW,台積電,BUY,1000,875,20,0,TWD,tw-001,Cathay,Main,generic_csv,台股範例
+2026-04-29,AAPL,US,Apple,BUY,10,198.5,1.0,0,USD,us-001,IBKR,US,generic_csv,美股範例

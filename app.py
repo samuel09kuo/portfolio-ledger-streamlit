@@ -1,0 +1,506 @@
+from __future__ import annotations
+
+from datetime import date
+
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+
+from portfolio_app.importers import (
+    build_manual_trade,
+    parse_cathay_csv,
+    parse_generic_csv,
+)
+from portfolio_app.market_data import (
+    build_symbol_catalog,
+    fetch_current_quotes,
+    fetch_fx_history,
+    fetch_price_history,
+)
+from portfolio_app.models import TEMPLATE_PATH, VISIBLE_LEDGER_COLUMNS
+from portfolio_app.ocr import ocr_image_to_text, parse_trades_from_ocr_text
+from portfolio_app.performance import (
+    build_current_snapshot,
+    build_portfolio_history,
+    validate_trades,
+)
+from portfolio_app.storage import append_records, load_ledger, save_ledger
+from portfolio_app.theme import (
+    BLUE,
+    GREEN,
+    LABEL3,
+    ORANGE,
+    PURPLE,
+    RED,
+    SURFACE,
+    SURFACE2,
+    TEAL,
+    apply_dark_figure_style,
+    inject_theme,
+)
+
+st.set_page_config(
+    page_title="股票績效總覽",
+    page_icon="📈",
+    layout="wide",
+)
+
+PAGE_OPTIONS = ["總覽", "匯入交易", "交易台帳"]
+
+
+def fmt_money(value: float, currency: str) -> str:
+    return f"{value:,.0f} {currency}"
+
+
+def fmt_pct(value: float | None) -> str:
+    if value is None or pd.isna(value):
+        return "—"
+    return f"{value * 100:+.2f}%"
+
+
+def render_shell_start() -> None:
+    inject_theme()
+    st.markdown('<div class="app-shell">', unsafe_allow_html=True)
+
+
+def render_shell_end() -> None:
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_hero(trades: pd.DataFrame) -> None:
+    st.markdown(
+        f"""
+        <section class="hero-card">
+            <div class="hero-eyebrow">Apple Dark Portfolio Console</div>
+            <h1 class="hero-title">股票績效總覽</h1>
+            <p class="hero-copy">
+                把對帳單、手動交易與照片 OCR 整理成單一台帳，用同一個深色儀表板追蹤台股與美股的已實現、未實現與總損益。
+            </p>
+            <div class="hero-meta">
+                <span class="hero-pill">交易筆數 {len(trades):,}</span>
+                <span class="hero-pill">資料來源 CSV / Manual / OCR</span>
+                <span class="hero-pill">Mobile-first 操作節奏</span>
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_section_intro(kicker: str, title: str, copy: str) -> None:
+    st.markdown(
+        f"""
+        <section class="info-card">
+            <div class="section-kicker">{kicker}</div>
+            <p class="section-title">{title}</p>
+            <p class="section-copy">{copy}</p>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_compact_note(text: str) -> None:
+    st.markdown(
+        f"""
+        <section class="info-card">
+            <p class="section-copy mono-note">{text}</p>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_navigation(trades: pd.DataFrame) -> tuple[str, str, int]:
+    render_section_intro(
+        "Navigation",
+        "手機優先導覽",
+        "用下拉式頁面切換取代固定 tab，讓單手操作時更容易切頁；總覽設定則收進可折疊區塊，避免左側操作列。",
+    )
+    page = st.selectbox(
+        "頁面",
+        PAGE_OPTIONS,
+        index=PAGE_OPTIONS.index(st.session_state.get("mobile_page", "總覽")) if st.session_state.get("mobile_page", "總覽") in PAGE_OPTIONS else 0,
+        key="mobile_page",
+    )
+    with st.expander("顯示設定", expanded=False):
+        st.caption("這些設定只影響總覽顯示，不會修改交易資料。")
+        base_currency = st.selectbox("總覽基準幣別", ["TWD", "USD"], index=0, key="base_currency_select")
+        refresh_seconds = st.select_slider("自動刷新報價", options=[0, 15, 30, 60], value=30, key="refresh_seconds_select")
+        st.caption("0 秒代表關閉自動刷新。開啟後總覽區會定期重新抓最新股價。")
+    if trades.empty and page != "匯入交易":
+        st.info("目前台帳是空的，建議先從「匯入交易」建立第一批資料。")
+    return page, base_currency, int(refresh_seconds)
+
+
+def load_market_context(
+    trades: pd.DataFrame,
+    base_currency: str,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict, dict]:
+    catalog = build_symbol_catalog(trades)
+    if catalog.empty:
+        return catalog, pd.DataFrame(), {}, {}
+    start_date = str(pd.to_datetime(trades["trade_date"]).min().date())
+    end_date = str((pd.Timestamp.today().normalize() + pd.Timedelta(days=1)).date())
+    currencies = set(catalog["currency"].dropna().astype(str).str.upper().tolist())
+    currencies.add(base_currency.upper())
+    quotes = fetch_current_quotes(catalog)
+    price_history = fetch_price_history(catalog, start_date, end_date)
+    fx_history = fetch_fx_history(currencies, start_date, end_date, base_currency)
+    return catalog, quotes, price_history, fx_history
+
+
+def render_summary_metrics(summary: dict[str, float | str | int], base_currency: str) -> None:
+    row1_col1, row1_col2 = st.columns(2)
+    row1_col1.metric("目前市值", fmt_money(float(summary["market_value"]), base_currency))
+    row1_col2.metric(
+        "未實現損益",
+        fmt_money(float(summary["unrealized_pnl"]), base_currency),
+        fmt_pct(float(summary["unrealized_pnl"]) / float(summary["open_cost"]) if float(summary["open_cost"]) else None),
+    )
+
+    row2_col1, row2_col2 = st.columns(2)
+    row2_col1.metric("已實現損益", fmt_money(float(summary["realized_pnl"]), base_currency))
+    row2_col2.metric(
+        "總損益",
+        fmt_money(float(summary["total_pnl"]), base_currency),
+        fmt_pct(float(summary["total_pnl"]) / float(summary["open_cost"]) if float(summary["open_cost"]) else None),
+    )
+
+    st.metric(
+        "持有標的 / 交易筆數",
+        f"{summary['holding_count']} 檔",
+        f"{summary['trade_count']} 筆交易",
+    )
+
+
+def render_overview(trades: pd.DataFrame, base_currency: str) -> None:
+    problems = validate_trades(trades)
+    if problems:
+        st.error("台帳內有需要先修正的資料，否則績效會不準。")
+        st.write("\n".join(f"- {problem}" for problem in problems[:10]))
+        return
+
+    catalog, quotes, price_history, fx_history = load_market_context(trades, base_currency)
+    summary, positions = build_current_snapshot(trades, quotes, fx_history, base_currency)
+    history = build_portfolio_history(trades, price_history, fx_history, base_currency)
+
+    render_section_intro(
+        "Overview",
+        "績效摘要",
+        "先看損益與持倉，再往下讀圖表與明細。整個摘要區優先為手機閱讀節奏設計。",
+    )
+    render_summary_metrics(summary, base_currency)
+
+    if summary["as_of"]:
+        render_compact_note(
+            f"最近報價更新時間：{summary['as_of']}。美股報價可能有延遲，總損益以目前抓到的最新報價換算。"
+        )
+
+    chart_col, allocation_col = st.columns([1.2, 1.0])
+    with chart_col:
+        render_section_intro(
+            "Performance",
+            "績效圖",
+            "用一張深色時間序列圖拆開總損益、未實現與已實現，方便在手機上快速判讀變化結構。",
+        )
+        if history.empty:
+            st.info("目前還沒有足夠的歷史價格可繪製績效圖。")
+        else:
+            fig = go.Figure()
+            fig.add_trace(
+                go.Scatter(
+                    x=history["date"],
+                    y=history["total_pnl"],
+                    mode="lines",
+                    name="總損益",
+                    line=dict(color=GREEN, width=3),
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=history["date"],
+                    y=history["unrealized_pnl"],
+                    mode="lines",
+                    name="未實現",
+                    line=dict(color=BLUE, width=2),
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=history["date"],
+                    y=history["realized_pnl"],
+                    mode="lines",
+                    name="已實現",
+                    line=dict(color=ORANGE, width=2, dash="dot"),
+                )
+            )
+            fig.add_hline(y=0, line_dash="dot", line_color=LABEL3)
+            apply_dark_figure_style(fig, height=400)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    with allocation_col:
+        render_section_intro(
+            "Allocation",
+            "持倉圖",
+            "用環形圖看目前權重，讓你先抓到部位集中度，再決定要不要往下看持倉排行。",
+        )
+        if positions.empty:
+            st.info("目前沒有持倉。")
+        else:
+            donut = px.pie(
+                positions,
+                names="symbol",
+                values="market_value_base",
+                hole=0.62,
+                color_discrete_sequence=[BLUE, GREEN, ORANGE, PURPLE, RED, TEAL],
+            )
+            donut.update_traces(
+                textposition="inside",
+                textfont_color="white",
+                marker=dict(line=dict(color=SURFACE2, width=1)),
+            )
+            apply_dark_figure_style(donut, height=400)
+            donut.update_layout(showlegend=True)
+            st.plotly_chart(donut, use_container_width=True, config={"displayModeBar": False})
+
+    render_section_intro(
+        "Positions",
+        "持倉明細",
+        "表格保留完整明細，但資訊順序先服務手機讀取：價值、損益、權重比成本欄位更靠前。",
+    )
+    if positions.empty:
+        st.info("尚無持股明細。")
+    else:
+        display = positions.copy()
+        display["quantity"] = display["quantity"].map(lambda value: f"{value:,.4f}".rstrip("0").rstrip("."))
+        display["avg_cost_local"] = display["avg_cost_local"].map(lambda value: f"{value:,.2f}")
+        display["last_price"] = display["last_price"].map(lambda value: f"{value:,.2f}")
+        display["market_value_base"] = display["market_value_base"].map(lambda value: fmt_money(value, base_currency))
+        display["unrealized_pnl_base"] = display["unrealized_pnl_base"].map(lambda value: fmt_money(value, base_currency))
+        display["realized_pnl_base"] = display["realized_pnl_base"].map(lambda value: fmt_money(value, base_currency))
+        display["weight_pct"] = display["weight_pct"].map(fmt_pct)
+        display["price_change_pct"] = display["price_change_pct"].map(fmt_pct)
+        st.dataframe(
+            display[
+                [
+                    "symbol",
+                    "market",
+                    "name",
+                    "market_value_base",
+                    "unrealized_pnl_base",
+                    "realized_pnl_base",
+                    "weight_pct",
+                    "quantity",
+                    "avg_cost_local",
+                    "last_price",
+                    "price_change_pct",
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    render_section_intro(
+        "Ranking",
+        "持倉市值排行",
+        "用橫向條圖快速看最大部位，保留台股與美股的視覺分色，方便一眼辨識市場分布。",
+    )
+    if positions.empty:
+        st.info("尚無排行資料。")
+    else:
+        bars = positions.sort_values("market_value_base", ascending=True).tail(10)
+        fig = px.bar(
+            bars,
+            x="market_value_base",
+            y="symbol",
+            orientation="h",
+            text="market_value_base",
+            color="market",
+            color_discrete_map={"TW": BLUE, "US": GREEN},
+        )
+        fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+        apply_dark_figure_style(fig, height=430)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+
+def render_import_tab() -> None:
+    render_section_intro(
+        "Import",
+        "建立或補齊交易台帳",
+        "匯入流程分成三條路徑：CSV、手動輸入、照片 OCR。先把主操作放前面，再把說明收成較輕的輔助資訊。",
+    )
+    subtab_csv, subtab_manual, subtab_photo = st.tabs(["上傳對帳單", "手動輸入", "照片輸入"])
+
+    with subtab_csv:
+        render_compact_note("支援國泰對帳單 CSV 與通用交易 CSV。如果要匯入美股，建議先用模板整理欄位。")
+        if TEMPLATE_PATH.exists():
+            st.download_button(
+                "下載通用交易模板",
+                TEMPLATE_PATH.read_bytes(),
+                file_name="trades_template.csv",
+                mime="text/csv",
+                type="primary",
+            )
+        import_type = st.radio("匯入格式", ["國泰對帳單 CSV", "通用交易 CSV"], horizontal=True)
+        uploaded = st.file_uploader("選擇檔案", type=["csv"], key="csv_import")
+        if uploaded is not None:
+            try:
+                records = (
+                    parse_cathay_csv(uploaded.getvalue())
+                    if import_type == "國泰對帳單 CSV"
+                    else parse_generic_csv(uploaded.getvalue())
+                )
+                preview = pd.DataFrame(records)
+                if preview.empty:
+                    st.warning("這份檔案沒有解析到交易紀錄。")
+                else:
+                    st.dataframe(preview, use_container_width=True, hide_index=True)
+                    if st.button("匯入這批交易", key="import_csv_button", type="primary", use_container_width=True):
+                        source = "cathay_csv" if import_type == "國泰對帳單 CSV" else "generic_csv"
+                        added = append_records(records, source=source)
+                        st.success(f"已匯入 {added} 筆新交易。")
+            except Exception as exc:
+                st.error(f"匯入失敗：{exc}")
+
+    with subtab_manual:
+        render_compact_note("手動輸入優先為手機操作設計，欄位順序從必要資訊開始，次要欄位放後面。")
+        with st.form("manual_trade_form", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            trade_date = col1.date_input("交易日期", value=date.today())
+            market = col2.selectbox("市場", ["TW", "US"])
+
+            col3, col4 = st.columns(2)
+            symbol = col3.text_input("股票代號", placeholder="2330 或 AAPL")
+            action = col4.selectbox("動作", ["BUY", "SELL", "SPLIT"])
+
+            col5, col6 = st.columns(2)
+            shares = col5.number_input("股數 / 分割倍率", min_value=0.0, value=0.0, step=1.0)
+            price = col6.number_input("成交價", min_value=0.0, value=0.0, step=0.01)
+
+            col7, col8 = st.columns(2)
+            fee = col7.number_input("手續費", min_value=0.0, value=0.0, step=0.01)
+            tax = col8.number_input("交易稅", min_value=0.0, value=0.0, step=0.01)
+
+            col9, col10 = st.columns(2)
+            name = col9.text_input("股票名稱", placeholder="可空白")
+            order_id = col10.text_input("委託單號", placeholder="可空白")
+
+            col11, col12 = st.columns(2)
+            broker = col11.text_input("券商", placeholder="Cathay / IBKR...")
+            account = col12.text_input("帳戶", placeholder="Main / US ...")
+
+            note = st.text_area("備註", placeholder="例如：盤前加碼、手動補登")
+            submitted = st.form_submit_button("新增交易", type="primary", use_container_width=True)
+            if submitted:
+                try:
+                    record = build_manual_trade(
+                        trade_date=trade_date,
+                        symbol=symbol,
+                        market=market,
+                        action=action,
+                        shares=shares,
+                        price=price if action != "SPLIT" else 1.0,
+                        fee=fee,
+                        tax=tax,
+                        name=name,
+                        order_id=order_id,
+                        broker=broker,
+                        account=account,
+                        note=note,
+                        source="manual",
+                    )
+                    added = append_records([record], source="manual")
+                    st.success(f"已新增 {added} 筆交易。")
+                except Exception as exc:
+                    st.error(f"新增失敗：{exc}")
+
+    with subtab_photo:
+        render_compact_note("照片 OCR 適合清楚截圖與已整理的交易明細。匯入前請再核對股數、價格與買賣方向。")
+        image_file = st.file_uploader("上傳照片 / 截圖", type=["png", "jpg", "jpeg"], key="photo_import")
+        if image_file is not None and st.button("執行 OCR", key="run_ocr", type="primary", use_container_width=True):
+            try:
+                text = ocr_image_to_text(image_file.getvalue())
+                parsed = parse_trades_from_ocr_text(text)
+                st.session_state["ocr_raw_text"] = text
+                st.session_state["ocr_records"] = parsed
+            except Exception as exc:
+                st.error(f"OCR 失敗：{exc}")
+        if st.session_state.get("ocr_raw_text"):
+            st.text_area("OCR 原始文字", value=st.session_state["ocr_raw_text"], height=180)
+            parsed = st.session_state.get("ocr_records", [])
+            if parsed:
+                preview = pd.DataFrame(parsed)
+                edited = st.data_editor(preview, use_container_width=True, num_rows="dynamic", key="ocr_preview_editor")
+                if st.button("匯入 OCR 交易", key="import_ocr_button", type="primary", use_container_width=True):
+                    added = append_records(edited.to_dict("records"), source="photo_ocr")
+                    st.success(f"已匯入 {added} 筆 OCR 交易。")
+            else:
+                st.warning("OCR 有讀到文字，但沒有成功辨識出可匯入的交易列。")
+
+
+def render_ledger_tab(trades: pd.DataFrame) -> None:
+    render_section_intro(
+        "Ledger",
+        "直接修正交易台帳",
+        "這裡保留完整編輯能力，但先用說明卡提醒資料會直接覆寫，避免在手機上誤操作後不知道影響範圍。",
+    )
+    if trades.empty:
+        st.info("台帳目前是空的，先到上方匯入第一批交易。")
+        return
+
+    render_compact_note("修改後按下方按鈕覆寫儲存。`trade_id` 與 `created_at` 為系統欄位，維持唯讀。")
+    editable = trades.copy()
+    edited = st.data_editor(
+        editable,
+        use_container_width=True,
+        hide_index=True,
+        num_rows="dynamic",
+        column_order=["trade_id", *VISIBLE_LEDGER_COLUMNS, "created_at"],
+        disabled=["trade_id", "created_at"],
+        key="ledger_editor",
+    )
+    if st.button("儲存台帳變更", type="primary", use_container_width=True):
+        try:
+            save_ledger(edited)
+            st.success("台帳已更新。")
+        except Exception as exc:
+            st.error(f"儲存失敗：{exc}")
+
+
+def main() -> None:
+    trades = load_ledger()
+    render_shell_start()
+    render_hero(trades)
+    selected_page, base_currency, refresh_seconds = render_navigation(trades)
+
+    if selected_page == "總覽":
+        if trades.empty:
+            render_section_intro(
+                "Welcome",
+                "先建立第一批交易資料",
+                "目前還沒有交易資料。先到「匯入交易」上傳對帳單、手動輸入，或用照片 OCR 建立第一批台帳。",
+            )
+            st.info("建立第一筆交易後，這裡就會開始顯示持倉、績效圖與損益摘要。")
+        else:
+            if refresh_seconds > 0:
+                render_compact_note(f"總覽每 {refresh_seconds} 秒刷新一次。")
+
+                @st.fragment(run_every=refresh_seconds)
+                def _live_overview() -> None:
+                    render_overview(load_ledger(), base_currency)
+
+                _live_overview()
+            else:
+                render_overview(trades, base_currency)
+    elif selected_page == "匯入交易":
+        render_import_tab()
+    else:
+        render_ledger_tab(trades)
+
+    render_shell_end()
+
+
+if __name__ == "__main__":
+    main()
