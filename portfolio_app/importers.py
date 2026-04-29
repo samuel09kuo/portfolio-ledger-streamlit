@@ -120,7 +120,7 @@ def _load_tw_name_symbol_lookup() -> dict[str, str]:
     lookup: dict[str, str] = {}
     for mode in (2, 4, 5):
         html = _public_get_text(f"https://isin.twse.com.tw/isin/C_public.jsp?strMode={mode}")
-        tables = pd.read_html(io.StringIO(html))
+        tables = pd.read_html(io.StringIO(html), flavor="lxml")
         if not tables:
             continue
         table = tables[0]
