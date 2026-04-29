@@ -42,10 +42,13 @@ APPLE_DARK_CSS = """
 }
 
 [data-testid="stAppViewContainer"] {
-    min-height: 100dvh !important;
+    min-height: 100vh !important;
+    height: auto !important;
     color: var(--label) !important;
-    scroll-padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8rem) !important;
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 7rem) !important;
+    scroll-padding-bottom: 0 !important;
+    padding-bottom: 0 !important;
+    overscroll-behavior-y: contain !important;
+    -webkit-overflow-scrolling: touch !important;
 }
 
 @supports (padding: max(0px)) {
@@ -54,7 +57,7 @@ APPLE_DARK_CSS = """
     }
 
     .block-container {
-        padding-bottom: calc(max(1.5rem, env(safe-area-inset-bottom)) + 6.5rem) !important;
+        padding-bottom: calc(max(2rem, env(safe-area-inset-bottom)) + 8.5rem) !important;
     }
 }
 
@@ -77,6 +80,7 @@ header[data-testid="stHeader"],
     padding-top: 1rem !important;
     padding-left: 1rem !important;
     padding-right: 1rem !important;
+    margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 3rem) !important;
 }
 
 h1, h2, h3, h4, h5, h6, p, label, input, textarea, button,
@@ -256,6 +260,7 @@ h1, h2, h3, h4, h5, h6, p, label, input, textarea, button,
 
 .stTabs [data-baseweb="tab-panel"] {
     padding-top: 0.95rem !important;
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 2.5rem) !important;
 }
 
 .stAlert,
@@ -342,7 +347,8 @@ div[data-testid="stDataEditor"] div[role="grid"] {
     .block-container {
         padding-left: 0.75rem !important;
         padding-right: 0.75rem !important;
-        padding-bottom: calc(max(1.25rem, env(safe-area-inset-bottom)) + 7rem) !important;
+        padding-bottom: calc(max(2rem, env(safe-area-inset-bottom)) + 9rem) !important;
+        margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 4rem) !important;
     }
 
     .hero-card {
